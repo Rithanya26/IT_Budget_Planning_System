@@ -15,10 +15,17 @@ export interface Department {
   budget: number;
 }
 
+export interface Category {
+  id: number;
+  name: string;
+  description?: string;
+  color_code?: string;
+}
+
 export interface Expense {
   id: string;
   deptId: string;
-  category: "Cloud" | "Software Licenses" | "Hardware" | "Maintenance";
+  category: string;
   amount: number;
   month: string; // e.g. "2025-07"
   description: string;

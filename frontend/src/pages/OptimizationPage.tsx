@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useApp } from "@/context/AppContext";
+import { apiService } from "@/services/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { getCategoryBreakdown } from "@/data/mockData";
-import { AlertTriangle, Lightbulb, Monitor, TrendingDown, DollarSign, Pencil, Check, X } from "lucide-react";
+import { AlertTriangle, Lightbulb, Monitor, TrendingDown, DollarSign, Pencil, Check, X, RefreshCw } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import GradientStatCard from "@/components/GradientStatCard";
 
@@ -14,11 +15,38 @@ export default function OptimizationPage() {
   const isAdmin = currentUser?.role === "admin";
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [suggestions, setSuggestions] = useState<Array<{ id?: number; department_id?: string; suggestion_text: string; created_at?: string }>>([]);
+  const [loading, setLoading] = useState(false);
 
   const deptIds = isAdmin ? departments.map((d) => d.id) : [currentUser?.deptId || ""];
   const relevantLicenses = licenses.filter((l) => deptIds.includes(l.deptId));
 
-  // Flag high cloud costs (>3 months consistently high)
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const data = await apiService.getOptimizationSuggestions();
+        if (!cancelled) setSuggestions(Array.isArray(data) ? data : []);
+      } catch {
+        if (!cancelled) setSuggestions([]);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleGenerate = async () => {
+    if (!isAdmin) return;
+    setLoading(true);
+    try {
+      await apiService.generateOptimization();
+      const data = await apiService.getOptimizationSuggestions();
+      setSuggestions(Array.isArray(data) ? data : []);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const cloudAlerts: { dept: string; total: number }[] = [];
   departments.forEach((d) => {
     if (!deptIds.includes(d.id)) return;
@@ -29,7 +57,6 @@ export default function OptimizationPage() {
     }
   });
 
-  // Unused licenses
   const unusedLicenses = relevantLicenses.filter((l) => l.totalPurchased - l.used > 3);
   const totalSavings = unusedLicenses.reduce((s, l) => s + (l.totalPurchased - l.used) * l.costPerLicense, 0);
   const totalWaste = relevantLicenses.reduce((s, l) => s + (l.totalPurchased - l.used) * l.costPerLicense, 0);
@@ -37,44 +64,71 @@ export default function OptimizationPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-foreground">Cost Optimization</h1>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Cost Optimization</h1>
+          <p className="text-muted-foreground text-sm">License usage and AI-generated allocation suggestions.</p>
+        </div>
+        {isAdmin && (
+          <Button size="sm" variant="outline" onClick={handleGenerate} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} />
+            {loading ? "Generating…" : "Generate suggestions"}
+          </Button>
+        )}
+      </div>
 
-      {/* Summary Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <GradientStatCard icon={DollarSign} label="Total License Cost" value={`$${totalLicenseCost.toLocaleString()}`} colorIndex={0} delay={0} />
         <GradientStatCard icon={TrendingDown} label="Potential Savings" value={`$${totalSavings.toLocaleString()}`} subtitle="from unused licenses" colorIndex={5} delay={80} />
         <GradientStatCard icon={AlertTriangle} label="Wasted Spend" value={`$${totalWaste.toLocaleString()}`} subtitle="per year" colorIndex={2} delay={160} />
       </div>
 
-      {/* Suggestions */}
+      {/* API-driven optimization suggestions */}
       <Card className="border-primary/20 bg-primary/5 animate-fade-up" style={{ animationDelay: "200ms" }}>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Lightbulb className="h-4 w-4 text-primary" /> Optimization Suggestions
+            <Lightbulb className="h-4 w-4 text-primary" />
+            Optimization Suggestions
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {cloudAlerts.length > 0 && cloudAlerts.map((a) => (
-            <div key={a.dept} className="flex items-start gap-2 text-sm rounded-lg bg-warning/10 p-3">
-              <AlertTriangle className="h-4 w-4 mt-0.5 text-warning shrink-0" />
-              <span><strong>{a.dept}</strong> has high cloud costs (${a.total.toLocaleString()}). Consider reviewing for under-utilized resources.</span>
-            </div>
-          ))}
-          {unusedLicenses.length > 0 && (
-            <div className="flex items-start gap-2 text-sm rounded-lg bg-primary/10 p-3">
-              <Monitor className="h-4 w-4 mt-0.5 text-primary shrink-0" />
-              <span>You have <strong>{unusedLicenses.reduce((s, l) => s + (l.totalPurchased - l.used), 0)}</strong> unused software licenses. Reducing them could save <strong>${totalSavings.toLocaleString()}/year</strong>.</span>
-            </div>
-          )}
-          {cloudAlerts.length === 0 && unusedLicenses.length === 0 && (
-            <p className="text-sm text-muted-foreground">No optimization suggestions at this time. Everything looks good! 🎉</p>
+          {suggestions.length > 0 ? (
+            suggestions.slice(0, 15).map((s, i) => (
+              <div key={i} className="text-sm rounded-lg bg-muted/50 p-3">
+                {s.suggestion_text}
+              </div>
+            ))
+          ) : (
+            <>
+              {cloudAlerts.length > 0 &&
+                cloudAlerts.map((a) => (
+                  <div key={a.dept} className="flex items-start gap-2 text-sm rounded-lg bg-warning/10 p-3">
+                    <AlertTriangle className="h-4 w-4 mt-0.5 text-warning shrink-0" />
+                    <span>
+                      <strong>{a.dept}</strong> has high cloud costs (${a.total.toLocaleString()}). Consider reviewing for under-utilized resources.
+                    </span>
+                  </div>
+                ))}
+              {unusedLicenses.length > 0 && (
+                <div className="flex items-start gap-2 text-sm rounded-lg bg-primary/10 p-3">
+                  <Monitor className="h-4 w-4 mt-0.5 text-primary shrink-0" />
+                  <span>
+                    You have <strong>{unusedLicenses.reduce((s, l) => s + (l.totalPurchased - l.used), 0)}</strong> unused software licenses. Reducing them could save <strong>${totalSavings.toLocaleString()}/year</strong>.
+                  </span>
+                </div>
+              )}
+              {cloudAlerts.length === 0 && unusedLicenses.length === 0 && (
+                <p className="text-sm text-muted-foreground">No optimization suggestions at this time. Generate suggestions (Admin) or ensure license usage is updated.</p>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
 
-      {/* License Tracker */}
       <Card className="animate-fade-up" style={{ animationDelay: "280ms" }}>
-        <CardHeader><CardTitle className="text-base">Software License Tracker</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-base">Software License Tracker</CardTitle>
+        </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
@@ -135,7 +189,10 @@ export default function OptimizationPage() {
                               size="icon"
                               variant="ghost"
                               className="h-6 w-6 text-muted-foreground hover:text-primary"
-                              onClick={() => { setEditingId(l.id); setEditValue(String(l.used)); }}
+                              onClick={() => {
+                                setEditingId(l.id);
+                                setEditValue(String(l.used));
+                              }}
                             >
                               <Pencil className="h-3 w-3" />
                             </Button>

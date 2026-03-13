@@ -6,8 +6,8 @@ import React, {
   useEffect,
 } from "react";
 
-import { apiService } from "@/services/api";
-import type { User, Department, Expense, License } from "@/data/mockData";
+import { apiService, setAuthToken } from "@/services/api";
+import type { User, Department, Expense, License, Category } from "@/data/mockData";
 
 interface AppState {
   currentUser: User | null;
@@ -15,6 +15,7 @@ interface AppState {
   departments: Department[];
   expenses: Expense[];
   licenses: License[];
+  categories: Category[];
   loading: boolean;
   error: string | null;
   login: (username: string, password: string) => Promise<void>;
@@ -23,6 +24,7 @@ interface AppState {
   updateDepartment: (id: string, updates: Partial<Department>) => void;
   addUser: (user: Omit<User, "id">) => Promise<void>;
   addExpense: (expense: Omit<Expense, "id">) => Promise<void>;
+  deleteExpense: (id: string) => Promise<void>;
   updateLicense: (id: string, used: number) => Promise<void>;
   refreshData: () => Promise<void>;
 }
@@ -35,6 +37,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [licenses, setLicenses] = useState<License[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,11 +51,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       setError(null);
 
-      const [rawDepts, rawUsers, rawExps, rawLics] = await Promise.all([
+      const [rawDepts, rawUsers, rawExps, rawLics, rawCats] = await Promise.all([
         apiService.getDepartments(),
         apiService.getUsers(),
         apiService.getExpenses(),
         apiService.getLicenses(),
+        apiService.getCategories(),
       ]);
 
       // Map backend rows into the shapes the UI expects
@@ -105,6 +109,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
           })
         )
       );
+
+      setCategories(
+        (rawCats as any[]).map(
+          (c): Category => ({
+            id: c.id,
+            name: c.name,
+            description: c.description || "",
+            color_code: c.color_code || "#666666",
+          })
+        )
+      );
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to load data from API";
@@ -119,7 +134,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
       setError(null);
-      const backendUser: any = await apiService.login(username, password);
+      const { user: backendUser, token } = await apiService.login(username, password);
 
       const user: User = {
         id: backendUser.id,
@@ -131,6 +146,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       };
 
       setCurrentUser(user);
+      setAuthToken(token);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Login failed";
       setError(message);
@@ -143,6 +159,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     setCurrentUser(null);
     setError(null);
+    setAuthToken(null);
   };
 
   const addDepartment = async (dept: Omit<Department, "id">) => {
@@ -195,6 +212,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       setError(null);
       const newExpense: Expense = { id: `e${Date.now()}`, ...expense };
+      
+      // Validate amount
+      if (!newExpense.amount || newExpense.amount <= 0) {
+        throw new Error("Amount must be greater than 0");
+      }
+      
+      if (!newExpense.month) {
+        throw new Error("Month is required");
+      }
+
       await apiService.createExpense({
         id: newExpense.id,
         dept_id: newExpense.deptId,
@@ -202,11 +229,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
         amount: newExpense.amount,
         month: newExpense.month,
         description: newExpense.description,
-      } as any);
+      });
+      
       setExpenses((prev) => [...prev, newExpense]);
+      
+      // Refresh data to ensure sync with backend
+      await refreshData();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to create expense";
+      setError(message);
+      throw err;
+    }
+  };
+
+  const deleteExpense = async (id: string) => {
+    try {
+      setError(null);
+      await apiService.deleteExpense(id);
+      setExpenses((prev) => prev.filter((e) => e.id !== id));
+      // Refresh data to ensure sync with backend
+      await refreshData();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to delete expense";
       setError(message);
       throw err;
     }
@@ -235,6 +281,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         departments,
         expenses,
         licenses,
+        categories,
         loading,
         error,
         login,
@@ -243,6 +290,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateDepartment,
         addUser,
         addExpense,
+        deleteExpense,
         updateLicense,
         refreshData,
       }}

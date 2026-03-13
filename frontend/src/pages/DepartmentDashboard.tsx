@@ -7,25 +7,34 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { getDeptTotalSpent, getDeptExpenses, getMonthlyBreakdown, type Expense } from "@/data/mockData";
-import { DollarSign, TrendingUp, TrendingDown, Percent, AlertTriangle, Plus, Filter } from "lucide-react";
+import { DollarSign, TrendingUp, TrendingDown, Percent, AlertTriangle, Plus, Filter, Trash2 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import GradientStatCard from "@/components/GradientStatCard";
 import CategoryBadge from "@/components/CategoryBadge";
 import ActivityTimeline from "@/components/ActivityTimeline";
 
-const CATEGORIES: Expense["category"][] = ["Cloud", "Software Licenses", "Hardware", "Maintenance"];
-
 export default function DepartmentDashboard() {
-  const { currentUser, departments, expenses, addExpense } = useApp();
+  const { currentUser, departments, expenses, categories, addExpense, deleteExpense } = useApp();
   const dept = departments.find((d) => d.id === currentUser?.deptId);
   const [showForm, setShowForm] = useState(false);
-  const [category, setCategory] = useState<Expense["category"]>("Cloud");
+  const [category, setCategory] = useState<string>(categories[0]?.name || "IT Personnel Costs");
   const [amount, setAmount] = useState("");
   const [month, setMonth] = useState("2025-10");
   const [description, setDescription] = useState("");
   const [filterCat, setFilterCat] = useState<string>("all");
   const [sortBy, setSortBy] = useState<"date" | "amount">("date");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   if (!dept || !currentUser) return <p className="p-6 text-muted-foreground">No department assigned.</p>;
 
@@ -39,11 +48,36 @@ export default function DepartmentDashboard() {
 
   const monthlyData = getMonthlyBreakdown(expenses, dept.id);
 
-  const handleAdd = (e: React.FormEvent) => {
+  const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    addExpense({ deptId: dept.id, category, amount: Number(amount), month, description });
-    setShowForm(false);
-    setAmount(""); setDescription("");
+    try {
+      await addExpense({ deptId: dept.id, category, amount: Number(amount), month, description });
+      setShowForm(false);
+      setAmount(""); 
+      setDescription("");
+      setCategory(categories[0]?.name || "IT Personnel Costs");
+    } catch (error) {
+      console.error("Error adding expense:", error);
+      alert("Failed to add expense. Please try again.");
+    }
+  };
+
+  const handleDeleteClick = (expenseId: string) => {
+    setDeleteTargetId(expenseId);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (deleteTargetId) {
+      try {
+        await deleteExpense(deleteTargetId);
+        setDeleteDialogOpen(false);
+        setDeleteTargetId(null);
+      } catch (error) {
+        console.error("Failed to delete expense:", error);
+        alert("Failed to delete expense. Please try again.");
+      }
+    }
   };
 
   return (
@@ -92,16 +126,16 @@ export default function DepartmentDashboard() {
             <form onSubmit={handleAdd} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Category</Label>
-                <Select value={category} onValueChange={(v) => setCategory(v as Expense["category"])}>
+                <Select value={category} onValueChange={setCategory}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    {categories.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label>Amount ($)</Label>
-                <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+                <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} min="0.01" step="0.01" placeholder="0.00" required />
               </div>
               <div className="space-y-2">
                 <Label>Month</Label>
@@ -109,10 +143,10 @@ export default function DepartmentDashboard() {
               </div>
               <div className="space-y-2">
                 <Label>Description</Label>
-                <Input value={description} onChange={(e) => setDescription(e.target.value)} required />
+                <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="e.g., Monthly service" required />
               </div>
               <div className="sm:col-span-2">
-                <Button type="submit" className="w-full">Add Expense</Button>
+                <Button type="submit" className="w-full" disabled={!amount || !month || !description}>Add Expense</Button>
               </div>
             </form>
           </CardContent>
@@ -144,12 +178,12 @@ export default function DepartmentDashboard() {
               <div className="flex items-center gap-1.5">
                 <Filter className="h-4 w-4 text-muted-foreground" />
                 <Select value={filterCat} onValueChange={setFilterCat}>
-                  <SelectTrigger className="w-[160px] h-8 text-xs">
+                  <SelectTrigger className="w-[200px] h-8 text-xs">
                     <SelectValue placeholder="All Categories" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Categories</SelectItem>
-                    {CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    {categories.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -173,6 +207,7 @@ export default function DepartmentDashboard() {
                 <TableHead>Category</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead>Amount</TableHead>
+                <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -182,12 +217,43 @@ export default function DepartmentDashboard() {
                   <TableCell><CategoryBadge category={e.category} /></TableCell>
                   <TableCell>{e.description}</TableCell>
                   <TableCell className="font-semibold">${e.amount.toLocaleString()}</TableCell>
+                  <TableCell className="text-right">
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => handleDeleteClick(e.id)}
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Expense</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this expense? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex gap-3">
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleConfirmDelete}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Activity Timeline */}
       <div className="animate-fade-up" style={{ animationDelay: "440ms" }}>

@@ -8,6 +8,7 @@ import LoginPage from "@/pages/LoginPage";
 import AdminDashboard from "@/pages/AdminDashboard";
 import DepartmentManagement from "@/pages/DepartmentManagement";
 import UserManagement from "@/pages/UserManagement";
+import VendorsManagement from "@/pages/VendorsManagement";
 import DepartmentDashboard from "@/pages/DepartmentDashboard";
 import ForecastingPage from "@/pages/ForecastingPage";
 import OptimizationPage from "@/pages/OptimizationPage";
@@ -34,6 +35,7 @@ function AppRoutes() {
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/admin/departments" element={<DepartmentManagement />} />
           <Route path="/admin/users" element={<UserManagement />} />
+          <Route path="/admin/vendors" element={<VendorsManagement />} />
           <Route path="/admin/forecasting" element={<ForecastingPage />} />
           <Route path="/admin/optimization" element={<OptimizationPage />} />
           <Route path="/" element={<Navigate to="/admin" replace />} />

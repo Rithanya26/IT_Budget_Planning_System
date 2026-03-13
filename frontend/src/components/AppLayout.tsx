@@ -1,7 +1,7 @@
 import { NavLink as RouterNavLink, useNavigate } from "react-router-dom";
 import { useApp } from "@/context/AppContext";
 import {
-  LayoutDashboard, Building2, Users, TrendingUp, Lightbulb, LogOut, Menu, X,
+  LayoutDashboard, Building2, Users, TrendingUp, Lightbulb, LogOut, Menu, X, Truck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -25,6 +25,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { label: "Dashboard", to: "/admin", icon: LayoutDashboard },
     { label: "Departments", to: "/admin/departments", icon: Building2 },
     { label: "Users", to: "/admin/users", icon: Users },
+    { label: "Vendors", to: "/admin/vendors", icon: Truck },
     { label: "Forecasting", to: "/admin/forecasting", icon: TrendingUp },
     { label: "Optimization", to: "/admin/optimization", icon: Lightbulb },
   ];

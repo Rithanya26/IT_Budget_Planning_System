@@ -1,27 +1,83 @@
+import { useState, useEffect } from "react";
 import { useApp } from "@/context/AppContext";
+import { apiService } from "@/services/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { getForecast, getMonthlyBreakdown } from "@/data/mockData";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts";
-import { TrendingUp, Calendar } from "lucide-react";
+import { TrendingUp, Calendar, RefreshCw } from "lucide-react";
 import GradientStatCard from "@/components/GradientStatCard";
 
 export default function ForecastingPage() {
   const { currentUser, departments, expenses } = useApp();
   const isAdmin = currentUser?.role === "admin";
+  const [apiForecasts, setApiForecasts] = useState<Record<string, { nextMonth?: number; nextYear?: number }>>({});
+  const [generating, setGenerating] = useState(false);
 
   const depts = isAdmin ? departments : departments.filter((d) => d.id === currentUser?.deptId);
 
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const data = await apiService.getAdminDashboard();
+        if (cancelled) return;
+        const nextMonth = (data as any).forecast_next_month_by_department ?? {};
+        const nextYear = (data as any).forecast_next_year_by_department ?? {};
+        const combined: Record<string, { nextMonth?: number; nextYear?: number }> = {};
+        depts.forEach((d) => {
+          combined[d.id] = { nextMonth: nextMonth[d.id], nextYear: nextYear[d.id] };
+        });
+        setApiForecasts(combined);
+      } catch {
+        if (!cancelled) setApiForecasts({});
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [depts.map((d) => d.id).join(","), expenses.length]);
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    try {
+      await apiService.generateForecasts();
+      const data = await apiService.getAdminDashboard();
+      const nextMonth = (data as any).forecast_next_month_by_department ?? {};
+      const nextYear = (data as any).forecast_next_year_by_department ?? {};
+      const combined: Record<string, { nextMonth?: number; nextYear?: number }> = {};
+      depts.forEach((d) => {
+        combined[d.id] = { nextMonth: nextMonth[d.id], nextYear: nextYear[d.id] };
+      });
+      setApiForecasts(combined);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-foreground">Expense Forecasting</h1>
-      <p className="text-muted-foreground">Predictions based on the last 3 months average spending.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Expense Forecasting</h1>
+          <p className="text-muted-foreground text-sm">Linear regression predictions from historical monthly spending.</p>
+        </div>
+        {isAdmin && (
+          <Button size="sm" variant="outline" onClick={handleGenerate} disabled={generating}>
+            <RefreshCw className={`h-4 w-4 mr-1 ${generating ? "animate-spin" : ""}`} />
+            {generating ? "Generating…" : "Generate forecasts"}
+          </Button>
+        )}
+      </div>
 
       {depts.map((dept, di) => {
         const forecast = getForecast(expenses, dept.id);
         const monthly = getMonthlyBreakdown(expenses, dept.id);
+        const apiF = apiForecasts[dept.id];
+        const nextMonth = apiF?.nextMonth ?? forecast.nextMonth;
+        const yearly = apiF?.nextYear ?? forecast.yearly;
         const forecastData = [
           ...monthly.map((m) => ({ ...m, type: "actual" })),
-          { month: "Next", total: forecast.nextMonth, type: "forecast" },
+          { month: "Next", total: nextMonth, type: "forecast" },
         ];
 
         return (
@@ -31,8 +87,8 @@ export default function ForecastingPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <GradientStatCard icon={TrendingUp} label="Predicted Next Month" value={`$${forecast.nextMonth.toLocaleString()}`} colorIndex={1} />
-                <GradientStatCard icon={Calendar} label="Yearly Estimate" value={`$${forecast.yearly.toLocaleString()}`} colorIndex={3} />
+                <GradientStatCard icon={TrendingUp} label="Predicted Next Month" value={`$${Number(nextMonth).toLocaleString()}`} colorIndex={1} />
+                <GradientStatCard icon={Calendar} label="Next Year Budget Estimate" value={`$${Number(yearly).toLocaleString()}`} colorIndex={3} />
               </div>
 
               <ResponsiveContainer width="100%" height={220}>
