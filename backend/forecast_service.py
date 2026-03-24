@@ -84,10 +84,24 @@ def _linear_regression(values):
     return a, b
 
 
+def clean_data(values):
+    """Remove extreme outliers while keeping enough points for forecasting."""
+    if not values:
+        return values
+
+    numeric_values = [float(v) for v in values]
+    avg = sum(numeric_values) / len(numeric_values)
+
+    cleaned = [v for v in numeric_values if (0.3 * avg) <= v <= (3 * avg)]
+    return cleaned if len(cleaned) >= 2 else numeric_values
+
+
 def predict_next_month(monthly_totals):
     """Predict next month expense from historical monthly totals."""
     if not monthly_totals:
         return 0.0
+
+    monthly_totals = clean_data(monthly_totals)
 
     a, b = _linear_regression([float(v) for v in monthly_totals])
     next_index = len(monthly_totals)
@@ -100,10 +114,40 @@ def predict_next_year_budget(monthly_totals):
     if not monthly_totals:
         return 0.0
 
+    monthly_totals = clean_data(monthly_totals)
+
     a, b = _linear_regression([float(v) for v in monthly_totals])
     n = len(monthly_totals)
     total = 0.0
     for i in range(n, n + 12):
         pred = a + b * i
         total += max(0.0, float(pred))
-    return total    
+    return total  
+
+def calculate_accuracy(values):
+    if len(values) < 3:
+        return None, None, None, None
+
+    cleaned_values = clean_data(values)
+    if len(cleaned_values) < 3:
+        return None, None, None, None
+
+    train = cleaned_values[:-1]
+    actual = float(cleaned_values[-1])
+
+    a, b = _linear_regression(train)
+
+    pred = float(a + b * len(train))
+
+    if actual == 0:
+        return actual, pred, None, None
+
+    mape = abs((actual - pred) / actual) * 100
+    accuracy = 100 - mape
+
+    return actual, pred, round(mape, 2), round(accuracy, 2)
+
+
+def calculate_metrics(values):
+    """Backward-compatible alias for existing callers."""
+    return calculate_accuracy(values)

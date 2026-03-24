@@ -1,5 +1,14 @@
 const API_BASE_URL = "http://localhost:5000";
 
+export interface ForecastEvaluationRow {
+  department_id: string;
+  department_name: string;
+  actual_expense: number | null;
+  predicted_expense: number | null;
+  mape: number | null;
+  accuracy: number | null;
+}
+
 const getToken = (): string | null => {
   return localStorage.getItem("it_budget_token");
 };
@@ -270,6 +279,16 @@ export const apiService = {
     const data = await response.json();
     if (data.status === "success") return data.forecasts;
     throw new Error(data.message || "Failed to generate forecasts");
+  },
+
+  getForecastEvaluation: async (departmentId?: string): Promise<ForecastEvaluationRow[]> => {
+    const params = new URLSearchParams();
+    if (departmentId) params.set("department_id", departmentId);
+    const url = `${API_BASE_URL}/forecasts/evaluate${params.toString() ? `?${params}` : ""}`;
+    const response = await fetch(url, { headers: authHeaders() });
+    const data = await response.json();
+    if (data.status === "success") return data.forecast_evaluation ?? [];
+    throw new Error(data.message || "Failed to fetch forecast evaluation");
   },
 
   // ==================== OPTIMIZATION ====================

@@ -10,7 +10,7 @@ from auth_utils import (
     hash_password, check_password, create_token, decode_token,
     require_auth, require_admin, optional_auth
 )
-from forecast_service import predict_next_month, predict_next_year_budget
+from forecast_service import predict_next_month, predict_next_year_budget, clean_data, calculate_accuracy
 from optimization_service import generate_suggestions
 
 app = Flask(__name__)
@@ -86,11 +86,70 @@ def _monthly_totals_from_expenses(cursor, dept_id):
 def _predict_for_department(cursor, dept_id):
     """Calculate latest forecasts for one department from live monthly totals."""
     monthly_totals = _monthly_totals_from_expenses(cursor, dept_id)
+    monthly_totals = clean_data(monthly_totals)
     print(f"[forecast-debug] department={dept_id} monthly_totals={monthly_totals}")
+   
     next_month_pred = float(predict_next_month(monthly_totals))
     next_year_pred = float(predict_next_year_budget(monthly_totals))
-    return monthly_totals, next_month_pred, next_year_pred
+    actual, predicted, mape, accuracy = calculate_accuracy(monthly_totals)
 
+    if actual is not None and predicted is not None and mape is not None and accuracy is not None:
+        print(f"[forecast-metrics] department={dept_id}")
+        print(f"Actual Expense    : {actual:.2f}")
+        print(f"Predicted Expense : {predicted:.2f}")
+        print(f"MAPE              : {mape:.2f}%")
+        print(f"Accuracy          : {accuracy:.2f}%")
+    else:
+        print(f"[forecast-metrics] department={dept_id} insufficient data for MAPE/accuracy")
+
+    return monthly_totals, next_month_pred, next_year_pred, actual, predicted, mape, accuracy
+    # return monthly_totals, next_month_pred, next_year_pred
+# def _predict_for_department(cursor, dept_id):
+#     monthly_totals = _monthly_totals_from_expenses(cursor, dept_id)
+
+#     print(f"[forecast-debug] department={dept_id} monthly_totals={monthly_totals}")
+
+#     # Prediction
+#     next_month_pred = float(predict_next_month(monthly_totals))
+#     next_year_pred = float(predict_next_year_budget(monthly_totals))
+
+#     # ✅ ADD EVALUATION HERE
+#     def evaluate_model(data, test_size=2):
+#         if len(data) <= test_size:
+#             return None, None
+
+#         train = data[:-test_size]
+#         test = data[-test_size:]
+
+#         a, b = _linear_regression(train)
+
+#         predictions = []
+#         for i in range(len(train), len(train) + test_size):
+#             predictions.append(a + b * i)
+
+#         n = len(test)
+#         mse = sum((a - p) ** 2 for a, p in zip(test, predictions)) / n
+#         rmse = mse ** 0.5
+
+#         mean_actual = sum(test) / n
+#         ss_total = sum((a - mean_actual) ** 2 for a in test)
+#         ss_res = sum((a - p) ** 2 for a, p in zip(test, predictions))
+#         r2 = 1 - (ss_res / ss_total) if ss_total != 0 else 0
+
+#         return rmse, r2
+
+#     rmse, r2 = evaluate_model(monthly_totals)
+
+#     # ✅ PRINT ACCURACY IN TERMINAL
+#     print(f"[forecast-result] department={dept_id}")
+#     print(f"  Next Month Prediction: {next_month_pred:.2f}")
+#     print(f"  Next Year Prediction : {next_year_pred:.2f}")
+
+#     if rmse is not None:
+#         print(f"  RMSE: {rmse:.2f}")
+#         print(f"  R²  : {r2:.2f}")
+
+#     return monthly_totals, next_month_pred, next_year_pred
 
 @app.route("/")
 def home():
@@ -106,7 +165,7 @@ def home():
             "expenses": "/expenses (GET, POST), /expenses/<id> (GET, PUT, DELETE)",
             "licenses": "/licenses (GET, POST), /licenses/<id> (PUT)",
             "software_licenses": "/software-licenses (GET, POST), /software-licenses/<id> (PUT)",
-            "forecasts": "/forecasts (GET), /forecasts/generate (POST)",
+            "forecasts": "/forecasts (GET), /forecasts/generate (POST), /forecasts/evaluate (GET)",
             "optimization": "/optimization (GET), /optimization/generate (POST)",
             "alerts": "/alerts/licenses-expiring (GET), /alerts/vendors-expiring (GET)",
             "dashboards": "/dashboard/department/<id> (GET), /dashboard/admin (GET)"
@@ -864,7 +923,7 @@ def generate_forecasts():
         current_year = datetime.now().year
         results = []
         for dept_id in depts:
-            monthly_totals, next_month_pred, next_year_pred = _predict_for_department(cursor, dept_id)
+            monthly_totals, next_month_pred, next_year_pred, actual, predicted, mape, accuracy = _predict_for_department(cursor, dept_id)
             try:
                 cursor.execute(
                     "INSERT INTO forecasts (department_id, forecast_type, predicted_value) VALUES (%s, 'monthly', %s), (%s, 'yearly', %s)",
@@ -877,10 +936,55 @@ def generate_forecasts():
                 "department_id": dept_id,
                 "forecast_next_month": round(next_month_pred, 2),
                 "forecast_next_year": round(next_year_pred, 2),
+                "actual_expense": round(float(actual), 2) if actual is not None else None,
+                "predicted_expense": round(float(predicted), 2) if predicted is not None else None,
+                "mape": round(float(mape), 2) if mape is not None else None,
+                "accuracy": round(float(accuracy), 2) if accuracy is not None else None,
             })
         cursor.close()
         connection.close()
         return jsonify({"status": "success", "forecasts": results}), 200
+    except Exception as e:
+        return jsonify({"status": "failed", "message": str(e)}), 500
+
+
+@app.route("/forecasts/evaluate", methods=["GET"])
+def evaluate_forecasts():
+    """Return evaluation values for dashboard rendering instead of terminal prints."""
+    try:
+        dept_filter = request.args.get("department_id")
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({"status": "failed", "message": "Database connection error"}), 500
+
+        cursor = connection.cursor()
+        try:
+            cursor.execute("SELECT id, name FROM departments ORDER BY name")
+            departments = cursor.fetchall()
+        except Exception:
+            departments = []
+
+        if dept_filter:
+            departments = [d for d in departments if str(d[0]) == str(dept_filter)]
+
+        results = []
+        for dept_id, dept_name in departments:
+            _, next_month_pred, _, actual, predicted, mape, accuracy = _predict_for_department(cursor, dept_id)
+
+            results.append(
+                {
+                    "department_id": dept_id,
+                    "department_name": dept_name,
+                    "actual_expense": round(float(actual), 2) if actual is not None else None,
+                    "predicted_expense": round(float(predicted), 2) if predicted is not None else round(float(next_month_pred), 2),
+                    "mape": round(float(mape), 2) if mape is not None else None,
+                    "accuracy": round(float(accuracy), 2) if accuracy is not None else None,
+                }
+            )
+
+        cursor.close()
+        connection.close()
+        return jsonify({"status": "success", "forecast_evaluation": results}), 200
     except Exception as e:
         return jsonify({"status": "failed", "message": str(e)}), 500
 
@@ -1091,7 +1195,8 @@ def department_dashboard(dept_id):
         cursor.execute("SELECT SUM(amount) as total FROM expenses WHERE dept_id=%s AND month = DATE_FORMAT(CURDATE(), '%%Y-%%m')", (dept_id,))
         row = cursor.fetchone()
         monthly_total_value = float(row[0]) if row and row[0] is not None else 0
-        _, forecast_next_month, forecast_next_year = _predict_for_department(cursor, dept_id)
+        # _, forecast_next_month, forecast_next_year = _predict_for_department(cursor, dept_id)
+        _, forecast_next_month, forecast_next_year, actual, pred, mape, accuracy = _predict_for_department(cursor, dept_id)
         try:
             cursor.execute("SELECT id, software, total_purchased, used FROM licenses WHERE dept_id=%s", (dept_id,))
             licenses = fetch_all_as_dict(cursor)
@@ -1110,6 +1215,10 @@ def department_dashboard(dept_id):
             "monthly_total": monthly_total_value,
             "forecast_next_month": round(forecast_next_month, 2),
             "forecast_next_year": round(forecast_next_year, 2),
+            "actual_expense": round(float(actual), 2) if actual is not None else None,
+            "predicted_expense": round(float(pred), 2) if pred is not None else None,
+            "mape": mape,
+            "accuracy": accuracy,
             "licenses": licenses,
         }), 200
     except Exception as e:
@@ -1206,7 +1315,7 @@ def admin_dashboard():
         forecast_next_year = {}
         for d in departments:
             dept_id = d["id"]
-            _, next_month_pred, next_year_pred = _predict_for_department(cursor, dept_id)
+            _, next_month_pred, next_year_pred, _, _, _, _ = _predict_for_department(cursor, dept_id)
             forecast_next_month[dept_id] = round(next_month_pred, 2)
             forecast_next_year[dept_id] = round(next_year_pred, 2)
         cursor.close()

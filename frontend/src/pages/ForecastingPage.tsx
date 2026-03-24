@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useApp } from "@/context/AppContext";
-import { apiService } from "@/services/api";
+import { apiService, type ForecastEvaluationRow } from "@/services/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { getForecast, getMonthlyBreakdown } from "@/data/mockData";
@@ -12,26 +12,52 @@ export default function ForecastingPage() {
   const { currentUser, departments, expenses } = useApp();
   const isAdmin = currentUser?.role === "admin";
   const [apiForecasts, setApiForecasts] = useState<Record<string, { nextMonth?: number; nextYear?: number }>>({});
+  const [evaluationByDept, setEvaluationByDept] = useState<Record<string, ForecastEvaluationRow>>({});
   const [generating, setGenerating] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const depts = isAdmin ? departments : departments.filter((d) => d.id === currentUser?.deptId);
+
+  const mergeEvaluation = (rows: ForecastEvaluationRow[]) => {
+    const next: Record<string, ForecastEvaluationRow> = {};
+    rows.forEach((row) => {
+      next[row.department_id] = row;
+    });
+    return next;
+  };
+
+  const loadForecastingData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [dashboardData, evaluationRows] = await Promise.all([
+        apiService.getAdminDashboard(),
+        isAdmin ? apiService.getForecastEvaluation() : apiService.getForecastEvaluation(currentUser?.deptId),
+      ]);
+
+      const nextMonth = (dashboardData as any).forecast_next_month_by_department ?? {};
+      const nextYear = (dashboardData as any).forecast_next_year_by_department ?? {};
+      const combined: Record<string, { nextMonth?: number; nextYear?: number }> = {};
+      depts.forEach((d) => {
+        combined[d.id] = { nextMonth: nextMonth[d.id], nextYear: nextYear[d.id] };
+      });
+      setApiForecasts(combined);
+      setEvaluationByDept(mergeEvaluation(evaluationRows));
+    } catch (err) {
+      setApiForecasts({});
+      setEvaluationByDept({});
+      setError(err instanceof Error ? err.message : "Failed to load forecasting data");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      try {
-        const data = await apiService.getAdminDashboard();
-        if (cancelled) return;
-        const nextMonth = (data as any).forecast_next_month_by_department ?? {};
-        const nextYear = (data as any).forecast_next_year_by_department ?? {};
-        const combined: Record<string, { nextMonth?: number; nextYear?: number }> = {};
-        depts.forEach((d) => {
-          combined[d.id] = { nextMonth: nextMonth[d.id], nextYear: nextYear[d.id] };
-        });
-        setApiForecasts(combined);
-      } catch {
-        if (!cancelled) setApiForecasts({});
-      }
+      await loadForecastingData();
+      if (cancelled) return;
     };
     load();
     return () => { cancelled = true; };
@@ -40,15 +66,8 @@ export default function ForecastingPage() {
   const handleGenerate = async () => {
     setGenerating(true);
     try {
-      await apiService.generateForecasts();
-      const data = await apiService.getAdminDashboard();
-      const nextMonth = (data as any).forecast_next_month_by_department ?? {};
-      const nextYear = (data as any).forecast_next_year_by_department ?? {};
-      const combined: Record<string, { nextMonth?: number; nextYear?: number }> = {};
-      depts.forEach((d) => {
-        combined[d.id] = { nextMonth: nextMonth[d.id], nextYear: nextYear[d.id] };
-      });
-      setApiForecasts(combined);
+      await apiService.generateForecasts(isAdmin ? undefined : currentUser?.deptId);
+      await loadForecastingData();
     } finally {
       setGenerating(false);
     }
@@ -59,7 +78,7 @@ export default function ForecastingPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Expense Forecasting</h1>
-          <p className="text-muted-foreground text-sm">Linear regression predictions from historical monthly spending.</p>
+          <p className="text-muted-foreground text-sm">Linear regression predictions with evaluation metrics (Actual, Predicted, MAPE, Accuracy).</p>
         </div>
         {isAdmin && (
           <Button size="sm" variant="outline" onClick={handleGenerate} disabled={generating}>
@@ -73,8 +92,13 @@ export default function ForecastingPage() {
         const forecast = getForecast(expenses, dept.id);
         const monthly = getMonthlyBreakdown(expenses, dept.id);
         const apiF = apiForecasts[dept.id];
+        const evaluation = evaluationByDept[dept.id];
         const nextMonth = apiF?.nextMonth ?? forecast.nextMonth;
         const yearly = apiF?.nextYear ?? forecast.yearly;
+        const actual = evaluation?.actual_expense;
+        const predicted = evaluation?.predicted_expense ?? nextMonth;
+        const mape = evaluation?.mape;
+        const accuracy = evaluation?.accuracy;
         const forecastData = [
           ...monthly.map((m) => ({ ...m, type: "actual" })),
           { month: "Next", total: nextMonth, type: "forecast" },
@@ -86,10 +110,37 @@ export default function ForecastingPage() {
               <CardTitle className="text-base">{dept.name}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <GradientStatCard icon={TrendingUp} label="Predicted Next Month" value={`$${Number(nextMonth).toLocaleString()}`} colorIndex={1} />
                 <GradientStatCard icon={Calendar} label="Next Year Budget Estimate" value={`$${Number(yearly).toLocaleString()}`} colorIndex={3} />
+                <GradientStatCard
+                  icon={TrendingUp}
+                  label="Actual Expense"
+                  value={actual == null ? "N/A" : `$${Number(actual).toLocaleString()}`}
+                  colorIndex={0}
+                />
+                <GradientStatCard
+                  icon={TrendingUp}
+                  label="Predicted Expense"
+                  value={predicted == null ? "N/A" : `$${Number(predicted).toLocaleString()}`}
+                  colorIndex={2}
+                />
+                <GradientStatCard
+                  icon={TrendingUp}
+                  label="MAPE (%)"
+                  value={mape == null ? "N/A" : `${Number(mape).toFixed(2)}%`}
+                  colorIndex={4}
+                />
+                <GradientStatCard
+                  icon={TrendingUp}
+                  label="Accuracy (%)"
+                  value={accuracy == null ? "N/A" : `${Number(accuracy).toFixed(2)}%`}
+                  colorIndex={5}
+                />
               </div>
+
+              {error && <p className="text-sm text-red-600">{error}</p>}
+              {loading && <p className="text-sm text-muted-foreground">Loading forecast metrics...</p>}
 
               <ResponsiveContainer width="100%" height={220}>
                 <AreaChart data={forecastData}>
