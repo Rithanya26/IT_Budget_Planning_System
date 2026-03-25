@@ -256,10 +256,16 @@ def login():
                 (username,),
             )
         except Exception:
-            cursor.execute(
-                "SELECT id, username, display_name, role, dept_id, password FROM users WHERE username=%s AND is_active=TRUE",
-                (username,),
-            )
+            try:
+                cursor.execute(
+                    "SELECT id, username, display_name, role, dept_id, password FROM users WHERE username=%s",
+                    (username,),
+                )
+            except Exception:
+                cursor.execute(
+                    "SELECT id, username, username AS display_name, 'department' AS role, NULL AS dept_id, password FROM users WHERE username=%s",
+                    (username,),
+                )
         row = cursor.fetchone()
         if not row:
             cursor.close()
@@ -345,7 +351,10 @@ def get_users():
             return jsonify({"status": "failed", "message": "Database connection error"}), 500
         
         cursor = connection.cursor()
-        cursor.execute("SELECT id, username, display_name, role, dept_id, is_active FROM users ORDER BY display_name")
+        try:
+            cursor.execute("SELECT id, username, display_name, role, dept_id, is_active FROM users ORDER BY display_name")
+        except Exception:
+            cursor.execute("SELECT id, username, username AS display_name, 'department' AS role, NULL AS dept_id, TRUE AS is_active FROM users ORDER BY username")
         users = fetch_all_as_dict(cursor)
         cursor.close()
         connection.close()
@@ -379,10 +388,16 @@ def create_user():
                 (user_id, username, pw_hash, display_name, role, dept_id),
             )
         except Exception:
-            cursor.execute(
-                "INSERT INTO users (id, username, password, display_name, role, dept_id) VALUES (%s, %s, %s, %s, %s, %s)",
-                (user_id, username, password, display_name, role, dept_id),
-            )
+            try:
+                cursor.execute(
+                    "INSERT INTO users (id, username, password, display_name, role, dept_id) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (user_id, username, password, display_name, role, dept_id),
+                )
+            except Exception:
+                cursor.execute(
+                    "INSERT INTO users (id, username, password) VALUES (%s, %s, %s)",
+                    (user_id, username, password),
+                )
         connection.commit()
         cursor.close()
         connection.close()
