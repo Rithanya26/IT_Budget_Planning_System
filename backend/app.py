@@ -23,12 +23,29 @@ CORS(app)
 #     "database": os.environ.get("DB_NAME", "it_budget_buddy"),
 #     "raise_on_warnings": True,
 # }
-mysql.connector.connect(
-    host="mysql.railway.internal",
-    user="root",
-    password="EFJtobVOajQgDUUrtlGMUEsgDlSDrGBo",
-    database="railway"
-)
+# mysql.connector.connect(
+#     host="mysql.railway.internal",
+#     user="root",
+#     password="EFJtobVOajQgDUUrtlGMUEsgDlSDrGBo",
+#     database="railway"
+# )
+
+# def get_db_connection():
+#     try:
+#         connection = mysql.connector.connect(**DB_CONFIG)
+#         if connection.is_connected():
+#             return connection
+#     except Error as e:
+#         print(f"Error connecting to MySQL: {e}")
+#         return None'
+# ✅ Database config using environment variables
+DB_CONFIG = {
+    "host": os.getenv("mysql.railway.internal"),
+    "port": int(os.getenv("3306", 3306)),
+    "user": os.getenv("root"),
+    "password": os.getenv("EFJtobVOajQgDUUrtlGMUEsgDlSDrGBo"),
+    "database": os.getenv("railway"),
+}
 
 def get_db_connection():
     try:
@@ -36,7 +53,7 @@ def get_db_connection():
         if connection.is_connected():
             return connection
     except Error as e:
-        print(f"Error connecting to MySQL: {e}")
+        print("❌ DB Connection Error:", e)
         return None
 
 def fetch_all_as_dict(cursor):
