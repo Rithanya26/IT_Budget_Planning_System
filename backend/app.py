@@ -15,6 +15,7 @@ from forecast_service import predict_next_month, predict_next_year_budget, clean
 from optimization_service import generate_suggestions
 
 app = Flask(__name__)
+app.config['CORS_HEADERS'] = 'Content-Type'
 
 # ✅ CORS configuration for Vercel frontend
 CORS(app, resources={
@@ -234,9 +235,12 @@ def _audit_log(conn, user_id: str, action: str):
         pass
 
 
-@app.route("/login", methods=["POST"])
+@app.route("/login", methods=["POST", "OPTIONS"])
 def login():
     try:
+        if request.method == "OPTIONS":
+            return "", 200
+
         data = request.json
         username = (data.get("username") or "").strip()
         password = data.get("password") or ""
