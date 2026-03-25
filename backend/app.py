@@ -37,7 +37,7 @@ def _build_db_config():
             "user": parsed.username,
             "password": parsed.password,
             "database": (parsed.path or "").lstrip("/") or "railway",
-        }
+        }, "DATABASE_URL/MYSQL_URL"
 
     # Railway public variable names (commonly provided by Railway)
     host = os.environ.get("MYSQLHOST") or os.environ.get("DB_HOST") or "localhost"
@@ -52,10 +52,10 @@ def _build_db_config():
         "user": user,
         "password": password,
         "database": database,
-    }
+    }, "MYSQL*/DB_*"
 
 
-DB_CONFIG = _build_db_config()
+DB_CONFIG, DB_CONFIG_SOURCE = _build_db_config()
 
 def get_db_connection():
     try:
@@ -1380,11 +1380,17 @@ def test_db():
     try:
         connection = get_db_connection()
         if not connection:
+            hint = None
+            if str(DB_CONFIG.get("host", "")).endswith("railway.internal"):
+                hint = "Render cannot use Railway internal host. Use Railway Public TCP host/port or set DATABASE_URL from Railway public connection string."
             return jsonify({
                 "status": "failed",
                 "message": "Failed to connect to database",
                 "db_host": DB_CONFIG.get("host"),
-                "db_name": DB_CONFIG.get("database")
+                "db_port": DB_CONFIG.get("port"),
+                "db_name": DB_CONFIG.get("database"),
+                "config_source": DB_CONFIG_SOURCE,
+                "hint": hint,
             }), 500
         
         cursor = connection.cursor()
