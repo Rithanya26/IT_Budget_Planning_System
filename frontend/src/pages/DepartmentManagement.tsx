@@ -23,15 +23,19 @@ export default function DepartmentManagement() {
     if (d) { setName(d.name); setBudget(d.budget.toString()); setEditId(id); setOpen(true); }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editId) {
-      updateDepartment(editId, { name, budget: Number(budget) });
-    } else {
-      addDepartment({ name, budget: Number(budget) });
+    try {
+      if (editId) {
+        await updateDepartment(editId, { name, budget: Number(budget) });
+      } else {
+        await addDepartment({ name, budget: Number(budget) });
+      }
+      setOpen(false);
+      reset();
+    } catch (error) {
+      console.error("Failed to save department", error);
     }
-    setOpen(false);
-    reset();
   };
 
   return (

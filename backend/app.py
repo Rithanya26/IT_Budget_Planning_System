@@ -343,6 +343,46 @@ def create_department():
         return jsonify({"status": "failed", "message": str(e)}), 500
 
 
+@app.route("/departments/<dept_id>", methods=["PUT"])
+def update_department(dept_id):
+    try:
+        data = request.json or {}
+        updates = []
+        values = []
+
+        if "name" in data and data.get("name"):
+            updates.append("name=%s")
+            values.append(data.get("name"))
+
+        if "budget" in data and data.get("budget") is not None:
+            updates.append("budget=%s")
+            values.append(float(data.get("budget")))
+
+        if not updates:
+            return jsonify({"status": "failed", "message": "No fields to update"}), 400
+
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({"status": "failed", "message": "Database connection error"}), 500
+
+        cursor = connection.cursor()
+        values.append(dept_id)
+        query = f"UPDATE departments SET {', '.join(updates)} WHERE id=%s"
+        cursor.execute(query, values)
+        connection.commit()
+
+        if cursor.rowcount == 0:
+            cursor.close()
+            connection.close()
+            return jsonify({"status": "failed", "message": "Department not found"}), 404
+
+        cursor.close()
+        connection.close()
+        return jsonify({"status": "success", "message": "Department updated"}), 200
+    except Exception as e:
+        return jsonify({"status": "failed", "message": str(e)}), 500
+
+
 @app.route("/users", methods=["GET"])
 def get_users():
     try:

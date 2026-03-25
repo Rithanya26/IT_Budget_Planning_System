@@ -21,7 +21,7 @@ interface AppState {
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
   addDepartment: (dept: Omit<Department, "id">) => Promise<void>;
-  updateDepartment: (id: string, updates: Partial<Department>) => void;
+  updateDepartment: (id: string, updates: Partial<Department>) => Promise<void>;
   addUser: (user: Omit<User, "id">) => Promise<void>;
   addExpense: (expense: Omit<Expense, "id">) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
@@ -180,11 +180,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const updateDepartment = (id: string, updates: Partial<Department>) => {
-    // UI-only update; backend update can be added if required
-    setDepartments((prev) =>
-      prev.map((d) => (d.id === id ? { ...d, ...updates } : d))
-    );
+  const updateDepartment = async (id: string, updates: Partial<Department>) => {
+    try {
+      setError(null);
+      await apiService.updateDepartment(id, {
+        ...(updates.name !== undefined ? { name: updates.name } : {}),
+        ...(updates.budget !== undefined ? { budget: Number(updates.budget) } : {}),
+      });
+      setDepartments((prev) =>
+        prev.map((d) => (d.id === id ? { ...d, ...updates } : d))
+      );
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to update department";
+      setError(message);
+      throw err;
+    }
   };
 
   const addUser = async (user: Omit<User, "id">) => {

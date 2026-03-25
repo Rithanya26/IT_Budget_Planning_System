@@ -61,6 +61,17 @@ export const apiService = {
     throw new Error(data.message || "Failed to create department");
   },
 
+  updateDepartment: async (id: string, updates: { name?: string; budget?: number }) => {
+    const response = await fetch(`${API_BASE_URL}/departments/${id}`, {
+      method: "PUT",
+      headers: authHeaders(),
+      body: JSON.stringify(updates),
+    });
+    const data = await response.json();
+    if (data.status === "success") return data;
+    throw new Error(data.message || "Failed to update department");
+  },
+
   // ==================== USERS ====================
   getUsers: async () => {
     const response = await fetch(`${API_BASE_URL}/users`, { headers: authHeaders() });
