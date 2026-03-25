@@ -40,11 +40,11 @@ def _build_db_config():
         }, "DATABASE_URL/MYSQL_URL"
 
     # Railway public variable names (commonly provided by Railway)
-    host = os.environ.get("MYSQLHOST") or os.environ.get("DB_HOST") or "localhost"
-    port = int(os.environ.get("MYSQLPORT") or os.environ.get("DB_PORT") or 3306)
+    host = os.environ.get("MYSQLHOST") or os.environ.get("DB_HOST") or "centerbeam.proxy.rlwy.net"
+    port = int(os.environ.get("MYSQLPORT") or os.environ.get("DB_PORT") or 24420)
     user = os.environ.get("MYSQLUSER") or os.environ.get("DB_USER") or "root"
-    password = os.environ.get("MYSQLPASSWORD") or os.environ.get("DB_PASSWORD") or ""
-    database = os.environ.get("MYSQLDATABASE") or os.environ.get("DB_NAME") or "it_budget_buddy"
+    password = os.environ.get("MYSQLPASSWORD") or os.environ.get("DB_PASSWORD") or "EFJtobVOajQgDUUrtlGMUEsgDlSDrGBo"
+    database = os.environ.get("MYSQLDATABASE") or os.environ.get("DB_NAME") or "railway"
 
     return {
         "host": host,
