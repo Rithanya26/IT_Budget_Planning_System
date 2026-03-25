@@ -1,4 +1,5 @@
-const API_BASE_URL = "http://localhost:5000";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "https://it-budget-planning-system.onrender.com";
 
 export interface ForecastEvaluationRow {
   department_id: string;

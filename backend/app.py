@@ -5,6 +5,7 @@ from mysql.connector import Error
 from datetime import datetime, timedelta
 import json
 import os
+from urllib.parse import urlparse
 
 from auth_utils import (
     hash_password, check_password, create_token, decode_token,
@@ -25,14 +26,36 @@ CORS(app, resources={
     }
 })
 
-# ✅ Database config using environment variables
-DB_CONFIG = {
-    "host": os.environ.get("DB_HOST", "localhost"),
-    "port": int(os.environ.get("DB_PORT", 3306)),
-    "user": os.environ.get("DB_USER", "root"),
-    "password": os.environ.get("DB_PASSWORD", ""),
-    "database": os.environ.get("DB_NAME", "it_budget_buddy"),
-}
+def _build_db_config():
+    """Build DB config from DATABASE_URL, Railway vars, or DB_* vars."""
+    database_url = os.environ.get("DATABASE_URL") or os.environ.get("MYSQL_URL")
+    if database_url:
+        parsed = urlparse(database_url)
+        return {
+            "host": parsed.hostname,
+            "port": parsed.port or 3306,
+            "user": parsed.username,
+            "password": parsed.password,
+            "database": (parsed.path or "").lstrip("/") or "railway",
+        }
+
+    # Railway public variable names (commonly provided by Railway)
+    host = os.environ.get("MYSQLHOST") or os.environ.get("DB_HOST") or "localhost"
+    port = int(os.environ.get("MYSQLPORT") or os.environ.get("DB_PORT") or 3306)
+    user = os.environ.get("MYSQLUSER") or os.environ.get("DB_USER") or "root"
+    password = os.environ.get("MYSQLPASSWORD") or os.environ.get("DB_PASSWORD") or ""
+    database = os.environ.get("MYSQLDATABASE") or os.environ.get("DB_NAME") or "it_budget_buddy"
+
+    return {
+        "host": host,
+        "port": port,
+        "user": user,
+        "password": password,
+        "database": database,
+    }
+
+
+DB_CONFIG = _build_db_config()
 
 def get_db_connection():
     try:
@@ -1360,8 +1383,8 @@ def test_db():
             return jsonify({
                 "status": "failed",
                 "message": "Failed to connect to database",
-                "db_host": os.environ.get("DB_HOST", "localhost"),
-                "db_name": os.environ.get("DB_NAME", "it_budget_buddy")
+                "db_host": DB_CONFIG.get("host"),
+                "db_name": DB_CONFIG.get("database")
             }), 500
         
         cursor = connection.cursor()
