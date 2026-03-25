@@ -14,37 +14,24 @@ from forecast_service import predict_next_month, predict_next_year_budget, clean
 from optimization_service import generate_suggestions
 
 app = Flask(__name__)
-CORS(app)
 
-# DB_CONFIG = {
-#     "host": os.environ.get("DB_HOST", "localhost"),
-#     "user": os.environ.get("DB_USER", "root"),
-#     "password": os.environ.get("DB_PASSWORD", "Rithanya2026"),
-#     "database": os.environ.get("DB_NAME", "it_budget_buddy"),
-#     "raise_on_warnings": True,
-# }
-# mysql.connector.connect(
-#     host="mysql.railway.internal",
-#     user="root",
-#     password="EFJtobVOajQgDUUrtlGMUEsgDlSDrGBo",
-#     database="railway"
-# )
+# ✅ CORS configuration for Vercel frontend
+CORS(app, resources={
+    r"/*": {
+        "origins": ["https://it-budget-planning-system.vercel.app"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True
+    }
+})
 
-# def get_db_connection():
-#     try:
-#         connection = mysql.connector.connect(**DB_CONFIG)
-#         if connection.is_connected():
-#             return connection
-#     except Error as e:
-#         print(f"Error connecting to MySQL: {e}")
-#         return None'
 # ✅ Database config using environment variables
 DB_CONFIG = {
-    "host": os.getenv("mysql.railway.internal"),
-    "port": int(os.getenv("3306", 3306)),
-    "user": os.getenv("root"),
-    "password": os.getenv("EFJtobVOajQgDUUrtlGMUEsgDlSDrGBo"),
-    "database": os.getenv("railway"),
+    "host": os.environ.get("DB_HOST", "localhost"),
+    "port": int(os.environ.get("DB_PORT", 3306)),
+    "user": os.environ.get("DB_USER", "root"),
+    "password": os.environ.get("DB_PASSWORD", ""),
+    "database": os.environ.get("DB_NAME", "it_budget_buddy"),
 }
 
 def get_db_connection():
@@ -1363,6 +1350,46 @@ def admin_dashboard():
     except Exception as e:
         return jsonify({"status": "failed", "message": str(e)}), 500
 
+# ==================== HEALTH CHECK ====================
+@app.route("/test-db", methods=["GET"])
+def test_db():
+    """Test database connectivity"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({
+                "status": "failed",
+                "message": "Failed to connect to database",
+                "db_host": os.environ.get("DB_HOST", "localhost"),
+                "db_name": os.environ.get("DB_NAME", "it_budget_buddy")
+            }), 500
+        
+        cursor = connection.cursor()
+        cursor.execute("SELECT 1")
+        result = cursor.fetchone()
+        cursor.close()
+        connection.close()
+        
+        if result:
+            return jsonify({
+                "status": "success",
+                "message": "Database connection successful",
+                "timestamp": datetime.now().isoformat()
+            }), 200
+        else:
+            return jsonify({"status": "failed", "message": "Database query failed"}), 500
+    except Exception as e:
+        return jsonify({
+            "status": "failed",
+            "message": str(e),
+            "error_type": type(e).__name__
+        }), 500
+
+@app.route("/health", methods=["GET"])
+def health_check():
+    """Simple health check endpoint"""
+    return jsonify({"status": "ok", "timestamp": datetime.now().isoformat()}), 200
+
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({"status": "failed", "message": "Endpoint not found"}), 404
@@ -1373,5 +1400,6 @@ def server_error(error):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    # Debug mode should be False in production (Gunicorn will handle it)
+    app.run(debug=os.environ.get("FLASK_DEBUG", "False").lower() == "true", host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 
