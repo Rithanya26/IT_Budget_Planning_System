@@ -16,13 +16,19 @@ from optimization_service import generate_suggestions
 app = Flask(__name__)
 CORS(app)
 
-DB_CONFIG = {
-    "host": os.environ.get("DB_HOST", "localhost"),
-    "user": os.environ.get("DB_USER", "root"),
-    "password": os.environ.get("DB_PASSWORD", "Rithanya2026"),
-    "database": os.environ.get("DB_NAME", "it_budget_buddy"),
-    "raise_on_warnings": True,
-}
+# DB_CONFIG = {
+#     "host": os.environ.get("DB_HOST", "localhost"),
+#     "user": os.environ.get("DB_USER", "root"),
+#     "password": os.environ.get("DB_PASSWORD", "Rithanya2026"),
+#     "database": os.environ.get("DB_NAME", "it_budget_buddy"),
+#     "raise_on_warnings": True,
+# }
+mysql.connector.connect(
+    host="mysql.railway.internal",
+    user="root",
+    password="EFJtobVOajQgDUUrtlGMUEsgDlSDrGBo",
+    database="railway"
+)
 
 def get_db_connection():
     try:
